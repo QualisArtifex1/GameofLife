@@ -1,189 +1,408 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Conway's Game of Life</title>
-  <style>
-    body { margin:0; padding:0; font-family:sans-serif; background:#f0f0f0; display:flex; flex-direction:column; align-items:center; }
-    #controls { margin:10px; display:flex; gap:0.5rem; }
-    #controls button, #controls input { padding:0.5rem; border:1px solid #888; background:#fff; border-radius:4px; cursor:pointer; }
-    #controls button:hover, #controls input:hover { background:#eee; }
-    #canvas-container { width:600px; max-width:90vw; }
-    canvas { width:100%; background:#fff; cursor:pointer; }
-    #shapes { display:grid; grid-template-columns:repeat(auto-fill,minmax(60px,1fr)); gap:0.5rem; width:600px; max-width:90vw; margin:10px 0; }
-    .shape { background:#eee; border:1px solid #999; border-radius:4px; padding:0.25rem; text-align:center; cursor:grab; }
-    #rules { width:600px; max-width:90vw; background:#fff; padding:1rem; border-radius:4px; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>Conway’s Game of Life — Plane • Mobile Friendly</title>
+<style>
+  :root{
+    --bg:#111; --panel:#1a1a1a; --text:#eaeaea; --muted:#aaa; --accent:#6aa0ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+  body{touch-action:none}
+
+  #app{display:grid;grid-template-columns:260px 1fr;grid-template-rows:auto 1fr;gap:10px;height:100%;padding:10px}
+  header{grid-column:1/-1;background:var(--panel);border-radius:10px;padding:8px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+  header h1{font-size:16px;margin:0;margin-right:auto;color:#fff;font-weight:600}
+  header .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  label{font-size:12px;color:var(--muted)}
+  input[type="range"]{width:140px}
+  .btn{background:#2a2a2a;border:1px solid #333;color:#eee;border-radius:8px;padding:6px 10px;cursor:pointer}
+  .btn:hover{background:#333}
+
+  #sidebar{background:var(--panel);border-radius:10px;padding:10px;overflow:auto}
+  #sidebar h2{font-size:14px;margin:4px 0 8px 0}
+  .palette{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .shape{background:#222;border:1px solid #333;border-radius:8px;padding:8px;cursor:grab;touch-action:none;position:relative}
+  .shape:active{cursor:grabbing}
+  .shape canvas{display:block;width:100%;height:auto;image-rendering:pixelated}
+  .shape .name{position:absolute;left:6px;bottom:6px;font-size:11px;color:var(--muted)}
+
+  .hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.3}
+
+  #canvasWrap{background:#000;border-radius:10px;position:relative;overflow:hidden;touch-action:none}
+  #stage{position:relative;width:100%;height:100%;transform-origin:0 0}
+  canvas{display:block;width:100%;height:100%}
+  .badge{font-size:11px;color:#ddd;position:absolute;right:8px;bottom:8px;background:#0008;padding:4px 8px;border-radius:999px;border:1px solid #333}
+  .ghost{pointer-events:none;position:absolute;border:1px dashed #888;border-radius:4px}
+
+  /* Mobile quick-access strip */
+  #shapeStrip{display:none;width:100%;overflow-x:auto;gap:8px;padding:6px 0}
+  #shapeStrip .chip{flex:0 0 auto;width:56px;height:56px;border:1px solid #333;border-radius:10px;background:#222;display:flex;align-items:center;justify-content:center;cursor:grab;position:relative}
+  #shapeStrip .chip.active{outline:2px solid var(--accent)}
+  #shapeStrip canvas{width:48px;height:40px;image-rendering:pixelated}
+
+  @media (max-width: 900px){
+    #app{grid-template-columns:1fr;grid-template-rows:auto auto 1fr}
+    #sidebar{order:2}
+    #canvasWrap{order:3;min-height:55vh}
+    header{flex-direction:column;align-items:flex-start}
+    input[type="range"]{width:120px}
+    #shapeStrip{display:flex}
+  }
+</style>
 </head>
 <body>
-  <h1>Conway's Game of Life</h1>
-  <div id="controls">
-    <button id="start">Start</button>
-    <button id="stop">Stop</button>
-    <button id="clear">Clear</button>
-    <label>Speed: <input id="speed" type="range" min="100" max="1000" step="50" value="500"></label>
+<div id="app">
+  <header>
+    <h1>Conway’s Game of Life</h1>
+
+    <!-- Mobile quick-access shape strip -->
+    <div id="shapeStrip" aria-label="Quick shapes"></div>
+
+    <div class="row">
+      <label>Speed</label>
+      <input id="speed" type="range" min="1" max="60" value="12" />
+      <span id="speedVal" style="font-size:12px;color:var(--muted)">12 gen/s</span>
+    </div>
+
+    <div class="row" id="pixelSizeHeader" style="display:none">
+      <label>Pixel size</label>
+      <input id="cellSize" type="range" min="4" max="32" value="12" />
+      <span id="cellVal" style="font-size:12px;color:var(--muted)">12 px</span>
+    </div>
+
+    <div class="row">
+      <label>Zoom</label>
+      <input id="zoom" type="range" min="50" max="220" value="100" />
+      <span id="zoomVal" style="font-size:12px;color:var(--muted)">100%</span>
+    </div>
+
+    <div class="row">
+      <button id="startBtn" class="btn">Start</button>
+      <button id="stopBtn" class="btn">Stop</button>
+      <button id="stepBtn" class="btn">Step</button>
+      <button id="clearBtn" class="btn">Clear</button>
+      <button id="randomBtn" class="btn">Randomize</button>
+    </div>
+  </header>
+
+  <aside id="sidebar">
+    <h2>Drag a shape</h2>
+    <div class="palette" id="palette"></div>
+    <div class="hint">
+      • Drag from palette (or tap a chip) to place on the grid.
+      • Tap a chip to arm; tap the grid to drop. Tap again to unarm.
+      • Grid wraps (toroidal).
+    </div>
+    <div class="hint desktop-only">
+      <label>Pixel size</label>
+      <input id="cellSizeDesktop" type="range" min="4" max="32" value="12" />
+      <span id="cellValDesktop">12 px</span>
+    </div>
+  </aside>
+
+  <div id="canvasWrap">
+    <div id="stage">
+      <canvas id="life"></canvas>
+      <div id="badge" class="badge">Gen <span id="gen">0</span></div>
+      <div id="ghost" class="ghost" style="display:none"></div>
+    </div>
   </div>
-  <div id="shapes"></div>
-  <div id="canvas-container"><canvas id="game" width="600" height="600"></canvas></div>
-  <div id="rules">
-    <p><strong>Rules:</strong></p>
-    <ul>
-      <li>Live with 2–3 neighbors</li>
-      <li>Dead becomes live with exactly 3 neighbors</li>
-      <li>Otherwise death or stays dead</li>
-    </ul>
-  </div>
+</div>
 
-  <script>
-    const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
-    const cellSize = 20;
-    const rows = canvas.height / cellSize;
-    const cols = canvas.width / cellSize;
-    let grid = Array.from({length:rows}, () => Array(cols).fill(0));
-    let running = false, interval = null, speed = 500;
-    let preview = null, currentRotation = 0;
+<script>
+(function(){
+  // ---------- Mobile detection ----------
+  const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if(isMobile){
+    document.getElementById('pixelSizeHeader').style.display = 'flex';
+    const desktopHint = document.querySelector('.desktop-only');
+    if(desktopHint) desktopHint.style.display = 'none';
+  }
 
-    const shapes = {
-      glider: [[0,1],[1,2],[2,0],[2,1],[2,2]],
-      blinker: [[0,1],[1,1],[2,1]],
-      toad: [[1,1],[1,2],[1,3],[2,0],[2,1],[2,2]],
-      beacon: [[0,0],[0,1],[1,0],[2,3],[3,2],[3,3]],
-      lwss: [[0,1],[0,4],[1,0],[2,0],[3,0],[3,4],[1,5],[2,5],[3,5]]
-    };
+  // ---------- DOM refs ----------
+  const canvas = document.getElementById('life');
+  const wrap = document.getElementById('canvasWrap');
+  const stage = document.getElementById('stage');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  let W=0, H=0;
 
-    function rotate(shape, angle) {
-      return shape.map(([y, x]) => {
-        switch (angle) {
-          case 90: return [x, -y];
-          case 180: return [-y, -x];
-          case 270: return [-x, y];
-          default: return [y, x];
-        }
-      });
+  const speedEl = document.getElementById('speed');
+  const speedVal = document.getElementById('speedVal');
+  const zoomEl = document.getElementById('zoom');
+  const zoomVal = document.getElementById('zoomVal');
+  const genEl = document.getElementById('gen');
+  const badge = document.getElementById('badge');
+  const ghost = document.getElementById('ghost');
+
+  const cellSizeHeader = document.getElementById('cellSize');
+  const cellSizeDesktop = document.getElementById('cellSizeDesktop');
+  const cellValHeader = document.getElementById('cellVal');
+  const cellValDesktop = document.getElementById('cellValDesktop');
+
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const stepBtn = document.getElementById('stepBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const randomBtn = document.getElementById('randomBtn');
+
+  const palette = document.getElementById('palette');
+  const shapeStrip = document.getElementById('shapeStrip');
+
+  // ---------- State ----------
+  let cellSize = +(cellSizeHeader?.value || cellSizeDesktop?.value || 12);
+  let cols=0, rows=0;
+  let grid, nextGrid;
+  let running=false; let lastTick=0; let gen=0;
+  let gensPerSecond = +speedEl.value; let msPerGen = 1000/gensPerSecond;
+
+  // stage transform state
+  let scale = (+zoomEl.value)/100; // 0.5–2.2 via slider
+  let panX = 0, panY = 0;
+  let activeShape = null; // name of selected shape from quick strip
+  let draggingShape = null; // while dragging from palette/strip
+  let drawing=false, erasing=false;
+
+  // ---------- Shapes ----------
+  const SHAPES = {
+    'Glider': [[1,0],[2,1],[0,2],[1,2],[2,2]],
+    'Blinker': [[0,0],[1,0],[2,0]],
+    'Toad': [[1,0],[2,0],[3,0],[0,1],[1,1],[2,1]],
+    'Beacon': [[0,0],[1,0],[0,1],[3,2],[2,3],[3,3]],
+    'LWSS': [[1,0],[4,0],[0,1],[0,2],[4,1],[4,2],[1,3],[2,3],[3,3],[4,3]],
+    'Pulsar': (function(){
+      const base = [
+        [2,0],[3,0],[4,0], [8,0],[9,0],[10,0],
+        [0,2],[5,2],[7,2],[12,2],
+        [0,3],[5,3],[7,3],[12,3],
+        [0,4],[5,4],[7,4],[12,4],
+        [2,5],[3,5],[4,5],[8,5],[9,5],[10,5],
+        [2,7],[3,7],[4,7],[8,7],[9,7],[10,7],
+        [0,8],[5,8],[7,8],[12,8],
+        [0,9],[5,9],[7,9],[12,9],
+        [0,10],[5,10],[7,10],[12,10],
+        [2,12],[3,12],[4,12],[8,12],[9,12],[10,12]
+      ];
+      return base.slice();
+    })()
+  };
+
+  // ---------- Palette & Quick Strip ----------
+  function getBounds(pts){
+    let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+    for(const [x,y] of pts){ if(x<minx)minx=x; if(y<miny)miny=y; if(x>maxx)maxx=x; if(y>maxy)maxy=y; }
+    return {x:minx,y:miny,w:maxx-minx+1,h:maxy-miny+1};
+  }
+  function drawShapePreview(cvs, pts, pad=3){
+    const g = cvs.getContext('2d');
+    const b = getBounds(pts);
+    const scale = Math.floor(Math.max(1, Math.min((cvs.width-2*pad)/b.w, (cvs.height-2*pad)/b.h)));
+    g.fillStyle = '#000'; g.fillRect(0,0,cvs.width,cvs.height);
+    g.globalAlpha = 0.12; g.strokeStyle = '#fff';
+    for(let x=0;x<=b.w;x++){ g.beginPath(); g.moveTo(pad+x*scale,pad); g.lineTo(pad+x*scale,pad+b.h*scale); g.stroke(); }
+    for(let y=0;y<=b.h;y++){ g.beginPath(); g.moveTo(pad,pad+y*scale); g.lineTo(pad+b.w*scale,pad+y*scale); g.stroke(); }
+    g.globalAlpha = 1; g.fillStyle = 'hsl(200 90% 60%)';
+    for(const [x,y] of pts){ g.fillRect(pad+(x-b.x)*scale+0.5, pad+(y-b.y)*scale+0.5, scale-1, scale-1); }
+    g.strokeStyle = '#333'; g.strokeRect(0.5,0.5,cvs.width-1,cvs.height-1);
+  }
+  function addShapeCard(name, pts){
+    const card = document.createElement('div');
+    card.className = 'shape';
+    card.dataset.shape = name;
+    card.draggable = true;
+    const mini = document.createElement('canvas'); mini.width=120; mini.height=86; drawShapePreview(mini, pts);
+    const label = document.createElement('div'); label.className='name'; label.textContent=name;
+    card.appendChild(mini); card.appendChild(label); palette.appendChild(card);
+
+    card.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', name); e.dataTransfer.effectAllowed='copy'; draggingShape=name; });
+    card.addEventListener('dragend', ()=>{ draggingShape=null; ghost.style.display='none'; });
+    card.addEventListener('pointerdown', e=>{ if(e.pointerType==='touch'){ setActiveShape(name); } });
+  }
+  function addShapeChip(name, pts){
+    const chip = document.createElement('div'); chip.className='chip'; chip.draggable = true; chip.title=name; chip.dataset.shape=name;
+    const c = document.createElement('canvas'); c.width=48; c.height=40; drawShapePreview(c, pts, 2); chip.appendChild(c); shapeStrip.appendChild(chip);
+    chip.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', name); e.dataTransfer.effectAllowed='copy'; draggingShape=name; });
+    chip.addEventListener('dragend', ()=>{ draggingShape=null; ghost.style.display='none'; });
+    chip.addEventListener('click', ()=>{ toggleActiveShape(name, chip); });
+    chip.addEventListener('touchstart', ()=>{ toggleActiveShape(name, chip); }, {passive:true});
+  }
+  function setActiveShape(name){ activeShape = name; updateChipHighlight(); }
+  function toggleActiveShape(name, chip){ activeShape = (activeShape===name? null : name); updateChipHighlight(); }
+  function updateChipHighlight(){
+    [...shapeStrip.querySelectorAll('.chip')].forEach(ch=>{ ch.classList.toggle('active', ch.dataset.shape===activeShape); });
+  }
+  (function buildShapes(){
+    palette.innerHTML=''; shapeStrip.innerHTML='';
+    for(const [name,pts] of Object.entries(SHAPES)){
+      addShapeCard(name, pts);
+      addShapeChip(name, pts);
+    }
+  })();
+
+  // ---------- Grid setup ----------
+  let oldCols=0, oldRows=0;
+  function makeGrid(c,r){ return new Uint8Array(c*r); }
+  function resize(){
+    const r = wrap.getBoundingClientRect();
+    canvas.width = Math.floor(r.width);
+    canvas.height = Math.floor(r.height);
+    W = canvas.width; H = canvas.height;
+    cols = Math.max(10, Math.floor(W / cellSize));
+    rows = Math.max(10, Math.floor(H / cellSize));
+
+    const newGrid = makeGrid(cols, rows);
+    if(grid){
+      for(let y=0;y<rows;y++) for(let x=0;x<cols;x++){
+        newGrid[y*cols+x] = grid[((y%oldRows)+oldRows)%oldRows * oldCols + ((x%oldCols)+oldCols)%oldCols] || 0;
+      }
+    }
+    grid = newGrid; nextGrid = makeGrid(cols, rows); oldCols=cols; oldRows=rows;
+    draw();
+  }
+
+  // ---------- Game logic ----------
+  function neighbors(x,y){
+    let n=0; for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ if(dx||dy){ const xx=(x+dx+cols)%cols; const yy=(y+dy+rows)%rows; n+=grid[yy*cols+xx]; } }
+    return n;
+  }
+  function step(){
+    for(let y=0;y<rows;y++) for(let x=0;x<cols;x++){
+      const idx=y*cols+x; const n=neighbors(x,y); const alive=grid[idx]===1;
+      nextGrid[idx] = (alive && (n===2||n===3)) || (!alive && n===3) ? 1 : 0;
+    }
+    const tmp=grid; grid=nextGrid; nextGrid=tmp; gen++;
+  }
+
+  // ---------- Rendering (plane) ----------
+  function draw(){
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+
+    // grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 1; ctx.beginPath();
+    for(let x=0;x<=cols;x++){ const xx = Math.floor(x*cellSize) + 0.5; ctx.moveTo(xx,0); ctx.lineTo(xx,H); }
+    for(let y=0;y<=rows;y++){ const yy = Math.floor(y*cellSize) + 0.5; ctx.moveTo(0,yy); ctx.lineTo(W,yy); }
+    ctx.stroke();
+
+    // cells
+    ctx.fillStyle = 'hsl(200 80% 55%)';
+    const inset = Math.max(1, Math.floor(cellSize*0.1));
+    const size = Math.max(1, cellSize - inset*2);
+    for(let y=0;y<rows;y++) for(let x=0;x<cols;x++) if(grid[y*cols+x]){
+      ctx.fillRect(Math.floor(x*cellSize)+inset, Math.floor(y*cellSize)+inset, size, size);
     }
 
-    function drawGrid() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          ctx.fillStyle = grid[y][x] ? '#000' : '#fff';
-          ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
-          ctx.strokeStyle = '#ccc';
-          ctx.strokeRect(x*cellSize, y*cellSize, cellSize, cellSize);
-        }
-      }
-      if (preview) {
-        const shape = rotate(preview.shape, currentRotation);
-        ctx.fillStyle = 'rgba(30,144,255,0.4)';
-        ctx.strokeStyle = '#1e90ff';
-        shape.forEach(([dy, dx]) => {
-          const px = (preview.x + dx)*cellSize;
-          const py = (preview.y + dy)*cellSize;
-          if (px>=0 && py>=0 && px<canvas.width && py<canvas.height) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(px+0.5, py+0.5, cellSize-1, cellSize-1);
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
-          }
-        });
-      }
+    badge.textContent = 'Gen ' + gen; genEl.textContent = gen;
+  }
+
+  // ---------- Transform helpers ----------
+  function applyTransform(){ stage.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`; }
+  function screenToCell(clientX, clientY){
+    const rect = canvas.getBoundingClientRect();
+    const xLocal = (clientX - rect.left - panX) / scale;
+    const yLocal = (clientY - rect.top  - panY) / scale;
+    const cx = Math.floor(xLocal / cellSize);
+    const cy = Math.floor(yLocal / cellSize);
+    return {x:((cx%cols)+cols)%cols, y:((cy%rows)+rows)%rows};
+  }
+
+  // ---------- Interaction ----------
+  function placeShapeAt(shapeName, atX, atY){
+    const pts = SHAPES[shapeName]; if(!pts) return;
+    const b = getBounds(pts);
+    for(const [sx,sy] of pts){
+      const gx = (atX + (sx - b.x) + cols) % cols;
+      const gy = (atY + (sy - b.y) + rows) % rows;
+      grid[gy*cols + gx] = 1;
     }
+    draw();
+  }
+  function updateGhostFromEvent(evt){
+    if(!(draggingShape || activeShape)){ ghost.style.display='none'; return; }
+    const name = draggingShape || activeShape; const pts = SHAPES[name]; if(!pts) return;
+    const b = getBounds(pts); const {x,y} = screenToCell(evt.clientX, evt.clientY);
+    const px = x*cellSize; const py = y*cellSize;
+    ghost.style.display = 'block';
+    ghost.style.left = px + 'px'; ghost.style.top = py + 'px';
+    ghost.style.width = (b.w*cellSize) + 'px'; ghost.style.height = (b.h*cellSize) + 'px';
+  }
 
-    function step() {
-      const newG = grid.map(r => [...r]);
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          let n = 0;
-          for (let dy=-1; dy<=1; dy++) {
-            for (let dx=-1; dx<=1; dx++) {
-              if (dx || dy) {
-                const yy = y+dy, xx = x+dx;
-                if (yy>=0 && yy<rows && xx>=0 && xx<cols) n += grid[yy][xx];
-              }
-            }
-          }
-          newG[y][x] = grid[y][x] ? (n===2 || n===3) : n===3;
-        }
-      }
-      grid = newG;
-      drawGrid();
+  canvas.addEventListener('pointerdown', e=>{
+    canvas.setPointerCapture(e.pointerId);
+    if(draggingShape || activeShape){
+      const name = draggingShape || activeShape; const {x,y}=screenToCell(e.clientX,e.clientY);
+      placeShapeAt(name, x, y);
+      // keep activeShape armed until toggled off; draggingShape ends on dragend
+      return;
     }
+    drawing = (e.button===0 || e.pointerType==='touch'); erasing = (e.button===2);
+    const {x,y}=screenToCell(e.clientX,e.clientY); grid[y*cols+x] = drawing?1:0; draw();
+  });
+  canvas.addEventListener('contextmenu', e=> e.preventDefault());
+  canvas.addEventListener('pointermove', e=>{ updateGhostFromEvent(e); if(drawing||erasing){ const {x,y}=screenToCell(e.clientX,e.clientY); grid[y*cols+x]= drawing?1:0; draw(); }});
+  canvas.addEventListener('pointerup', ()=>{ drawing=false; erasing=false; });
 
-    // Controls
-    document.getElementById('start').onclick = () => { if (!running) { running=true; interval = setInterval(step, speed); } };
-    document.getElementById('stop').onclick = () => { running=false; clearInterval(interval); };
-    document.getElementById('clear').onclick = () => { grid = grid.map(r => r.fill(0)); drawGrid(); };
-    document.getElementById('speed').oninput = e => { speed = +e.target.value; if (running) { clearInterval(interval); interval = setInterval(step, speed); } };
+  // Drag & drop from palette / strip
+  canvas.addEventListener('dragover', e=>{ if(draggingShape){ e.preventDefault(); updateGhostFromEvent(e); }});
+  canvas.addEventListener('drop', e=>{ e.preventDefault(); const name=e.dataTransfer.getData('text/plain') || draggingShape; if(!name) return; const {x,y}=screenToCell(e.clientX,e.clientY); placeShapeAt(name,x,y); draggingShape=null; ghost.style.display='none'; });
 
-    // Cell toggle
-    canvas.addEventListener('click', e => {
-      if (running) return;
-      const r = canvas.getBoundingClientRect();
-      const x = Math.floor((e.clientX - r.left)/cellSize);
-      const y = Math.floor((e.clientY - r.top)/cellSize);
-      grid[y][x] = grid[y][x] ? 0 : 1;
-      drawGrid();
-    });
+  // Pinch-to-zoom and one-finger pan when no shape is armed
+  let touchState = {mode:null, startDist:0, startScale:scale, startPanX:0, startPanY:0, startX:0, startY:0};
+  stage.addEventListener('touchstart', e=>{
+    if(e.touches.length===2){
+      touchState.mode='pinch';
+      const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+      touchState.startDist=Math.hypot(dx,dy); touchState.startScale=scale;
+    } else if(e.touches.length===1 && !activeShape && !draggingShape){
+      touchState.mode='pan'; touchState.startX=e.touches[0].clientX; touchState.startY=e.touches[0].clientY; touchState.startPanX=panX; touchState.startPanY=panY;
+    } else {
+      touchState.mode=null; // default to draw/place handlers
+    }
+  }, {passive:true});
+  stage.addEventListener('touchmove', e=>{
+    if(touchState.mode==='pinch' && e.touches.length===2){
+      const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+      const dist=Math.hypot(dx,dy); scale = Math.min(2.2, Math.max(0.5, touchState.startScale * (dist/touchState.startDist)));
+      zoomEl.value = String(Math.round(scale*100)); zoomVal.textContent = Math.round(scale*100) + '%'; applyTransform();
+    } else if(touchState.mode==='pan' && e.touches.length===1){
+      panX = touchState.startPanX + (e.touches[0].clientX - touchState.startX);
+      panY = touchState.startPanY + (e.touches[0].clientY - touchState.startY);
+      applyTransform();
+    }
+  }, {passive:true});
 
-    // Palette
-    const shapesDiv = document.getElementById('shapes');
-    Object.entries(shapes).forEach(([name, coords]) => {
-      const div = document.createElement('div');
-      div.className = 'shape'; div.draggable = true; div.dataset.shape = name;
-      const maxY = Math.max(...coords.map(c => c[0]));
-      const maxX = Math.max(...coords.map(c => c[1]));
-      const gridContainer = document.createElement('div');
-      gridContainer.style.display = 'grid';
-      gridContainer.style.gridTemplateRows = `repeat(${maxY+1}, 10px)`;
-      gridContainer.style.gridTemplateColumns = `repeat(${maxX+1}, 10px)`;
-      gridContainer.style.gap = '1px';
-      coords.forEach(([dy, dx]) => {
-        const cell = document.createElement('div');
-        cell.style.width = '10px'; cell.style.height = '10px';
-        cell.style.background = '#000';
-        cell.style.gridRowStart = dy + 1;
-        cell.style.gridColumnStart = dx + 1;
-        gridContainer.appendChild(cell);
-      });
-      div.appendChild(gridContainer);
-      const lbl = document.createElement('div'); lbl.textContent = name; div.appendChild(lbl);
-      div.addEventListener('dragstart', e => { preview = null; div.style.opacity = 0.5; e.dataTransfer.setData('shape', name); });
-      div.addEventListener('dragend', () => { div.style.opacity = 1; preview = null; drawGrid(); });
-      shapesDiv.appendChild(div);
-    });
+  // ---------- Controls ----------
+  startBtn.addEventListener('click', ()=> running=true);
+  stopBtn.addEventListener('click', ()=> running=false);
+  stepBtn.addEventListener('click', ()=>{ step(); draw(); });
+  clearBtn.addEventListener('click', ()=>{ grid.fill(0); gen=0; draw(); });
+  randomBtn.addEventListener('click', ()=>{ for(let i=0;i<grid.length;i++) grid[i] = Math.random() < 0.18 ? 1 : 0; gen=0; draw(); });
 
-    // Drag/drop
-    canvas.addEventListener('dragover', e => {
-      e.preventDefault();
-      const r = canvas.getBoundingClientRect();
-      const x = Math.floor((e.clientX - r.left)/cellSize);
-      const y = Math.floor((e.clientY - r.top)/cellSize);
-      const sn = e.dataTransfer.getData('shape');
-      if (shapes[sn]) { preview = {shape: shapes[sn], x, y}; drawGrid(); }
-    });
-    canvas.addEventListener('dragleave', () => { preview = null; drawGrid(); });
-    canvas.addEventListener('drop', e => {
-      e.preventDefault();
-      if (running) return;
-      const r = canvas.getBoundingClientRect();
-      const x = Math.floor((e.clientX - r.left)/cellSize);
-      const y = Math.floor((e.clientY - r.top)/cellSize);
-      const sn = e.dataTransfer.getData('shape');
-      if (shapes[sn]) {
-        rotate(shapes[sn], currentRotation).forEach(([dy, dx]) => {
-          const yy = y + dy, xx = x + dx;
-          if (yy>=0 && yy<rows && xx>=0 && xx<cols) grid[yy][xx] = 1;
-        });
-        preview = null;
-        drawGrid();
-      }
-    });
+  speedEl.addEventListener('input', ()=>{ gensPerSecond=+speedEl.value; speedVal.textContent = gensPerSecond + ' gen/s'; msPerGen=1000/gensPerSecond; });
+  zoomEl.addEventListener('input', ()=>{ scale=(+zoomEl.value)/100; zoomVal.textContent=Math.round(scale*100)+'%'; applyTransform(); });
 
-    drawGrid();
-  </script>
+  function setCellSize(val){
+    cellSize = +val; if(cellValHeader) cellValHeader.textContent = cellSize + ' px'; if(cellValDesktop) cellValDesktop.textContent = cellSize + ' px';
+    if(cellSizeHeader && document.activeElement!==cellSizeHeader) cellSizeHeader.value = String(cellSize);
+    if(cellSizeDesktop && document.activeElement!==cellSizeDesktop) cellSizeDesktop.value = String(cellSize);
+    resize();
+  }
+  if(cellSizeHeader) cellSizeHeader.addEventListener('input', e=> setCellSize(e.target.value));
+  if(cellSizeDesktop) cellSizeDesktop.addEventListener('input', e=> setCellSize(e.target.value));
+
+  // ---------- Loop ----------
+  function loop(ts){ if(running){ if(ts-lastTick >= msPerGen){ step(); draw(); lastTick=ts; } } requestAnimationFrame(loop); }
+
+  // ---------- Init ----------
+  window.addEventListener('resize', resize);
+  resize(); draw(); requestAnimationFrame(loop); applyTransform();
+
+  // Seed with a couple starters
+  placeShapeAt('Glider', 3, 3);
+  placeShapeAt('LWSS', Math.floor(cols*0.7), Math.floor(rows*0.3));
+})();
+</script>
 </body>
 </html>
